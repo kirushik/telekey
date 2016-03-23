@@ -2,3 +2,6 @@
 name = "telekey"
 version = "0.1.0"
 authors = ["Kirill Pimenov <kirushik@gmail.com>"]
+
+[dependencies]
+telegram-bot = "0.4"
