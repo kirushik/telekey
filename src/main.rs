@@ -1,16 +1,35 @@
 extern crate telegram_bot;
 use telegram_bot::*;
 
-use std::thread;
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
+use std::sync::Arc;
 
 use std::io::prelude::*;
 use std::fs::File;
 
+extern crate simple_signal;
+use simple_signal::{Signals, Signal};
+
 //extern crate rustc_serialize;
 //use rustc_serialize::json;
 
-fn do_loop(greeting: Arc<Mutex<String>>) {
+fn load_config() -> Result<String> {
+    let mut f = try!(File::open("greeting.txt"));
+    let mut s = String::new();
+    try!(f.read_to_string(&mut s));
+    Ok(s)
+}
+
+
+fn main() {
+    let greeting = Arc::new(Mutex::new(load_config().unwrap_or("Hi".into())));
+    let trap_greeting = greeting.clone();
+
+    Signals::set_handler(&[Signal::Hup], move |_signals| {
+        let mut greeting = trap_greeting.lock().unwrap();
+        *greeting = load_config().unwrap_or("Hi".into());
+    });
+
     let api = Api::from_env("TELEGRAM_BOT_TOKEN").unwrap();
     println!("getMe: {:?}", api.get_me());
 
@@ -19,10 +38,10 @@ fn do_loop(greeting: Arc<Mutex<String>>) {
     listener.listen(|u| {
         if let Some(m) = u.message {
             if let MessageType::Text(_) = m.msg {
-                let hi = greeting.lock().unwrap();
+                let greeting = greeting.lock().unwrap();
                 try!(api.send_message(
                         m.chat.id(),
-                        format!("{}, {}!", *hi, m.from.first_name),
+                        format!("{}, {}!", *greeting, m.from.first_name),
                         None, None, None, None)
                     );
             }
@@ -30,20 +49,4 @@ fn do_loop(greeting: Arc<Mutex<String>>) {
 
         Ok(ListeningAction::Continue)
     });
-}
-
-fn read_data() -> Result<String> {
-    let mut f = try!(File::open("greeting.txt"));
-    let mut s = String::new();
-    try!(f.read_to_string(&mut s));
-    Ok(s)
-}
-
-fn main() {
-    let greeting = Arc::new(Mutex::new(read_data().unwrap_or("Hi".into())));
-
-    let child = thread::spawn(|| {
-        do_loop(greeting);
-    });
-    child.join().unwrap();
 }
