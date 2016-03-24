@@ -4,8 +4,6 @@ use telegram_bot::*;
 use std::thread;
 use std::sync::{Arc, Mutex};
 
-use std::borrow::Cow;
-
 use std::io::prelude::*;
 use std::fs::File;
 
@@ -47,5 +45,5 @@ fn main() {
     let child = thread::spawn(|| {
         do_loop(greeting);
     });
-    child.join();
+    child.join().unwrap();
 }
