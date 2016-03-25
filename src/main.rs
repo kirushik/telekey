@@ -50,6 +50,25 @@ fn handle_sighup(settings: Arc<Mutex<String>>) {
     debug!("Config reloaded");
 }
 
+fn handle_telegram(api: Api, settings: Arc<Mutex<String>>) {
+    let mut listener = api.listener(ListeningMethod::LongPoll(None));
+
+    listener.listen(|u| {
+        if let Some(m) = u.message {
+            if let MessageType::Text(_) = m.msg {
+                let greeting = settings.lock().unwrap();
+                try!(api.send_message(
+                        m.chat.id(),
+                        format!("{}, {}!", *greeting, m.from.first_name),
+                        None, None, None, None)
+                    );
+            }
+        }
+
+        Ok(ListeningAction::Continue)
+    }).unwrap();
+}
+
 fn main() {
     let cli_options_config = load_yaml!("cli.yml");
     let cli_options = App::from_yaml(cli_options_config)
@@ -64,31 +83,20 @@ fn main() {
     let trap_greeting = greeting.clone();
     Signals::set_handler(&[Signal::Hup], move |_signals| {
         info!("Got SIGHUP, reloading");
-        let greeting = trap_greeting.clone();
+        let trap_greeting = trap_greeting.clone();
         thread::spawn(move || {
-            handle_sighup(greeting);
+            handle_sighup(trap_greeting);
         });
     });
 
 
     let telegram_bot_token = cli_options.value_of("TELEGRAM_BOT_TOKEN").unwrap();
     let api = Api::from_token(telegram_bot_token).unwrap();
-    println!("getMe: {:?}", api.get_me());
+    info!("Bot connected: {:?}", api.get_me().unwrap());
 
-    let mut listener = api.listener(ListeningMethod::LongPoll(None));
+    let telegram_thread = thread::spawn(move || {
+      handle_telegram(api, greeting);
+    });
 
-    listener.listen(|u| {
-        if let Some(m) = u.message {
-            if let MessageType::Text(_) = m.msg {
-                let greeting = greeting.lock().unwrap();
-                try!(api.send_message(
-                        m.chat.id(),
-                        format!("{}, {}!", *greeting, m.from.first_name),
-                        None, None, None, None)
-                    );
-            }
-        }
-
-        Ok(ListeningAction::Continue)
-    }).unwrap();
+    telegram_thread.join().unwrap();
 }
