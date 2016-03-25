@@ -70,5 +70,5 @@ fn main() {
         }
 
         Ok(ListeningAction::Continue)
-    });
+    }).unwrap();
 }
