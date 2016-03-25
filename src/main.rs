@@ -13,8 +13,20 @@ use simple_signal::{Signals, Signal};
 extern crate clap;
 use clap::{Arg, App, AppSettings};
 
-//extern crate rustc_serialize;
-//use rustc_serialize::json;
+// Logging
+#[macro_use]
+extern crate log;
+extern crate flexi_logger;
+
+
+fn init_logging(enable_debug: bool) {
+  let log_level = if enable_debug {
+    Some("telekey=debug".into())
+  } else {
+    Some("telekey=warn".into())
+  };
+  flexi_logger::init(flexi_logger::LogConfig::new(), log_level).unwrap();
+}
 
 fn load_config() -> Result<String> {
     let mut f = try!(File::open("greeting.txt"));
@@ -30,6 +42,7 @@ fn main() {
                       .version("0.1.0")
                       .author("Kirill Pimenov <kirill@pimenov.cc>")
                       .about("Telegram door opener (in a broad sense)")
+    init_logging(cli_options.is_present("debug"));
 
                       .arg(Arg::with_name("TELEGRAM_BOT_TOKEN")
                            .long("bot-token")
