@@ -31,6 +31,9 @@ use clap::App;
 extern crate log;
 extern crate flexi_logger;
 
+// Calling shell commands
+use std::process::Command;
+
 #[derive(Default,Debug)]
 struct Action {
     action: String,
@@ -101,6 +104,13 @@ fn generate_actions_list(actions: &Vec<Action>) -> String {
     buff
 }
 
+fn call(commandline: &String) {
+    let mut arguments: Vec<&str> = commandline.split_whitespace().collect();
+    let command = arguments.remove(0);
+    debug!("Calling {:?} with arguments {:?}", command, arguments);
+    Command::new(command).args(&arguments).spawn().unwrap();
+}
+
 fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
     let mut listener = api.listener(ListeningMethod::LongPoll(None));
 
@@ -126,6 +136,7 @@ fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
                             debug!("Found matching action {:?}", action);
                             if action.users.iter().any(|allowed| *allowed == requested_username) {
                                 debug!("Action authorized");
+                                call(&action.command);
                                 api.send_message(
                                     m.chat.id(),
                                     format!("{}, {}!", action.title, m.from.first_name),

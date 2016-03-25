@@ -1,6 +1,6 @@
 action: /open
 title: Открыть дверь
-command: "touch ~/a.dat"
+command: "/usr/bin/touch /home/kirushik/a.dat"
 users:
     - kirushik
     - valushik
