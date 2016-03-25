@@ -55,12 +55,17 @@ fn handle_telegram(api: Api, settings: Arc<Mutex<String>>) {
 
     listener.listen(|u| {
         if let Some(m) = u.message {
+            debug!("Got {:?}", m);
             if let MessageType::Text(_) = m.msg {
                 let greeting = settings.lock().unwrap();
                 try!(api.send_message(
                         m.chat.id(),
                         format!("{}, {}!", *greeting, m.from.first_name),
-                        None, None, None, None)
+                        None, None, None,
+                        Some(ReplyKeyboardMarkup {
+                            keyboard: vec![vec![greeting.clone()]],
+                            ..Default::default()
+                        }.into()))
                     );
             }
         }
