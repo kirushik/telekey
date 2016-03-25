@@ -10,6 +10,9 @@ use std::fs::File;
 extern crate simple_signal;
 use simple_signal::{Signals, Signal};
 
+extern crate clap;
+use clap::{Arg, App, AppSettings};
+
 //extern crate rustc_serialize;
 //use rustc_serialize::json;
 
@@ -22,6 +25,25 @@ fn load_config() -> Result<String> {
 
 
 fn main() {
+
+    let matches = App::new("telekey")
+                      .version("0.1.0")
+                      .author("Kirill Pimenov <kirill@pimenov.cc>")
+                      .about("Telegram door opener (in a broad sense)")
+
+                      .arg(Arg::with_name("TELEGRAM_BOT_TOKEN")
+                           .long("bot-token")
+                           .short("t")
+                           .takes_value(true)
+                           .required(true)
+                           .help("API token of a Telegram bot (please get it from @BotFather)"))
+
+                      .setting(AppSettings::ArgRequiredElseHelp)
+
+                      .get_matches();
+
+    let telegram_bot_token = matches.value_of("TELEGRAM_BOT_TOKEN").unwrap();
+
     let greeting = Arc::new(Mutex::new(load_config().unwrap_or("Hi".into())));
     let trap_greeting = greeting.clone();
 
@@ -30,7 +52,7 @@ fn main() {
         *greeting = load_config().unwrap_or("Hi".into());
     });
 
-    let api = Api::from_env("TELEGRAM_BOT_TOKEN").unwrap();
+    let api = Api::from_token(telegram_bot_token).unwrap();
     println!("getMe: {:?}", api.get_me());
 
     let mut listener = api.listener(ListeningMethod::LongPoll(None));

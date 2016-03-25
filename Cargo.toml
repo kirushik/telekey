@@ -11,5 +11,5 @@ lto = true
 
 [dependencies]
 telegram-bot = "0.4"
-nix = "0.5.0"
 simple-signal = "1.0.5"
+clap = "1.4"
