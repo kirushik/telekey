@@ -1,17 +1,23 @@
+// Telegram Bot API support
 extern crate telegram_bot;
 use telegram_bot::*;
 
+// Threading and synchronization
 use std::sync::Mutex;
 use std::sync::Arc;
 
+// Reading stuff from files
 use std::io::prelude::*;
 use std::fs::File;
 
+// Posix signals handling
 extern crate simple_signal;
 use simple_signal::{Signals, Signal};
 
+// Command line parsing
+#[macro_use]
 extern crate clap;
-use clap::{Arg, App, AppSettings};
+use clap::App;
 
 // Logging
 #[macro_use]
@@ -37,34 +43,24 @@ fn load_config() -> Result<String> {
 
 
 fn main() {
+    let cli_options_config = load_yaml!("cli.yml");
+    let cli_options = App::from_yaml(cli_options_config)
+                          .setting(clap::AppSettings::ArgRequiredElseHelp)
+                          .get_matches();
 
-    let matches = App::new("telekey")
-                      .version("0.1.0")
-                      .author("Kirill Pimenov <kirill@pimenov.cc>")
-                      .about("Telegram door opener (in a broad sense)")
     init_logging(cli_options.is_present("debug"));
 
-                      .arg(Arg::with_name("TELEGRAM_BOT_TOKEN")
-                           .long("bot-token")
-                           .short("t")
-                           .takes_value(true)
-                           .required(true)
-                           .help("API token of a Telegram bot (please get it from @BotFather)"))
-
-                      .setting(AppSettings::ArgRequiredElseHelp)
-
-                      .get_matches();
-
-    let telegram_bot_token = matches.value_of("TELEGRAM_BOT_TOKEN").unwrap();
 
     let greeting = Arc::new(Mutex::new(load_config().unwrap_or("Hi".into())));
-    let trap_greeting = greeting.clone();
 
+    let trap_greeting = greeting.clone();
     Signals::set_handler(&[Signal::Hup], move |_signals| {
         let mut greeting = trap_greeting.lock().unwrap();
         *greeting = load_config().unwrap_or("Hi".into());
     });
 
+
+    let telegram_bot_token = cli_options.value_of("TELEGRAM_BOT_TOKEN").unwrap();
     let api = Api::from_token(telegram_bot_token).unwrap();
     println!("getMe: {:?}", api.get_me());
 

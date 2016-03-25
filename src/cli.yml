@@ -1,0 +1,16 @@
+name: telekey
+version: 0.1.0
+author: Kirill Pimenov <kirill@pimenov.cc>
+about: Telegram door opener (in a broad sense)
+
+args:
+    - TELEGRAM_BOT_TOKEN:
+        long: bot-token
+        short: t
+        takes_value: true
+        required: true
+        help: API token of a Telegram bot (please get it from @BotFather)
+
+    - debug:
+        long: debug
+        help: Enable debugging output
