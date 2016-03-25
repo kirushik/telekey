@@ -86,6 +86,13 @@ fn handle_sighup(settings: &Arc<Mutex<Vec<Action>>>) {
     debug!("Config reloaded");
 }
 
+fn generate_keyboard(actions: &Vec<Action>) -> Option<ReplyMarkup> {
+    Some(ReplyKeyboardMarkup {
+        keyboard: vec![actions.iter().map(|a| a.action.clone()).collect()],
+        ..Default::default()
+    }.into())
+}
+
 fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
     let mut listener = api.listener(ListeningMethod::LongPoll(None));
 
@@ -93,18 +100,34 @@ fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
         if let Some(m) = u.message {
             debug!("Got {:?}", m);
             if let MessageType::Text(requested_action) = m.msg {
-                let actions = settings.lock().unwrap();
-                for action in actions.iter() {
-                    if action.action == requested_action {
-                        api.send_message(
-                            m.chat.id(),
-                            format!("{}, {}!", action.title, m.from.first_name),
-                            None, None, None,
-                            Some(ReplyKeyboardMarkup {
-                                keyboard: vec![actions.iter().map(|a| a.action.clone()).collect()],
-                                ..Default::default()
-                            }.into())).unwrap();
+                let requested_username = m.from.username.unwrap();
 
+                let actions = settings.lock().unwrap();
+                let keyboard = generate_keyboard(&actions);
+
+                if requested_action == "/start" {
+                    api.send_message(
+                        m.chat.id(),
+                        format!("Привет, {}!", m.from.first_name),
+                        None, None, None, keyboard.clone()
+                        ).unwrap();
+                } else {
+                    for action in actions.iter() {
+                        if action.action == requested_action {
+                            if action.users.iter().any(|allowed| *allowed == requested_username) {
+                                api.send_message(
+                                    m.chat.id(),
+                                    format!("{}, {}!", action.title, m.from.first_name),
+                                    None, None, None, keyboard.clone()
+                                    ).unwrap();
+                            } else {
+                                api.send_message(
+                                    m.chat.id(),
+                                    format!("Пошёл нафиг, {}!", m.from.first_name),
+                                    None, None, None, keyboard.clone()
+                                    ).unwrap();
+                            }
+                        }
                     }
                 }
             }
