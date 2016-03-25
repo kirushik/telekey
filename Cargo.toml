@@ -3,6 +3,9 @@ name = "telekey"
 version = "0.1.0"
 authors = ["Kirill Pimenov <kirushik@gmail.com>"]
 
+[profile.dev]
+codegen-units = 4
+
 [profile.release]
 lto = true
 
