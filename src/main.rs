@@ -3,6 +3,7 @@ extern crate telegram_bot;
 use telegram_bot::*;
 
 // Threading and synchronization
+use std::thread;
 use std::sync::Mutex;
 use std::sync::Arc;
 
@@ -29,18 +30,25 @@ fn init_logging(enable_debug: bool) {
   let log_level = if enable_debug {
     Some("telekey=debug".into())
   } else {
-    Some("telekey=warn".into())
+    Some("telekey=info".into())
   };
   flexi_logger::init(flexi_logger::LogConfig::new(), log_level).unwrap();
 }
 
 fn load_config() -> Result<String> {
+    debug!("Loading config");
     let mut f = try!(File::open("greeting.txt"));
     let mut s = String::new();
     try!(f.read_to_string(&mut s));
+    debug!("Successfuly loaded config");
     Ok(s)
 }
 
+fn handle_sighup(settings: Arc<Mutex<String>>) {
+    let mut settings = settings.lock().unwrap();
+    *settings = load_config().unwrap_or(String::new());
+    debug!("Config reloaded");
+}
 
 fn main() {
     let cli_options_config = load_yaml!("cli.yml");
@@ -55,8 +63,11 @@ fn main() {
 
     let trap_greeting = greeting.clone();
     Signals::set_handler(&[Signal::Hup], move |_signals| {
-        let mut greeting = trap_greeting.lock().unwrap();
-        *greeting = load_config().unwrap_or("Hi".into());
+        info!("Got SIGHUP, reloading");
+        let greeting = trap_greeting.clone();
+        thread::spawn(move || {
+            handle_sighup(greeting);
+        });
     });
 
 
