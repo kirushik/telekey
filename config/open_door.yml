@@ -1,0 +1,6 @@
+action: open
+title: Открыть дверь
+command: "touch ~/a.dat"
+users:
+    - kirushik
+    - valushik

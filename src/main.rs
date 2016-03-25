@@ -10,6 +10,12 @@ use std::sync::Arc;
 // Reading stuff from files
 use std::io::prelude::*;
 use std::fs::File;
+extern crate glob;
+use glob::glob;
+
+// Parsing yaml
+extern crate yaml_rust;
+use yaml_rust::{Yaml, YamlLoader};
 
 // Posix signals handling
 extern crate simple_signal;
@@ -25,6 +31,14 @@ use clap::App;
 extern crate log;
 extern crate flexi_logger;
 
+#[derive(Default,Debug)]
+struct Action {
+    action: String,
+    title: String,
+    command: String,
+    hidden: bool,
+    users: Vec<String>
+}
 
 fn init_logging(enable_debug: bool) {
   let log_level = if enable_debug {
@@ -35,13 +49,38 @@ fn init_logging(enable_debug: bool) {
   flexi_logger::init(flexi_logger::LogConfig::new(), log_level).unwrap();
 }
 
+fn parse_action(yaml: &Yaml) -> Action {
+    let action_name = yaml["action"].as_str().unwrap_or("<unknown>");
+    Action {
+        action: action_name.into(),
+        title: yaml["title"].as_str().unwrap_or(action_name).into(),
+        command: yaml["command"].as_str().unwrap_or("").into(),
+        hidden: yaml["hidden"].as_bool().unwrap_or(false),
+        users: yaml["users"].as_vec().unwrap_or(&vec![]).iter().map(|x| x.as_str().unwrap_or("").into()).collect()
+    }
+}
+
 fn load_config() -> Result<String> {
-    debug!("Loading config");
-    let mut f = try!(File::open("greeting.txt"));
-    let mut s = String::new();
-    try!(f.read_to_string(&mut s));
+    debug!("Loading configs");
+
+    let mut new_config: Vec<Action> = vec![];
+    for file in glob("config/*.yml").unwrap() {
+        if let Ok(file) = file {
+            let mut f = try!(File::open(file));
+            let mut s = String::new();
+            try!(f.read_to_string(&mut s));
+            let yaml = YamlLoader::load_from_str(&s).unwrap();
+            let action = parse_action(&yaml[0]);
+            debug!("Action {:?} loaded", action);
+            new_config.push(action);
+        }
+    }
+
+    info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
+
+
     debug!("Successfuly loaded config");
-    Ok(s)
+    Ok(String::new())
 }
 
 fn handle_sighup(settings: Arc<Mutex<String>>) {
