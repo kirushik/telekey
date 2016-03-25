@@ -60,15 +60,15 @@ fn parse_action(yaml: &Yaml) -> Action {
     }
 }
 
-fn load_config() -> Result<String> {
+fn load_config(settings: &Arc<Mutex<Vec<Action>>>) {
     debug!("Loading configs");
 
     let mut new_config: Vec<Action> = vec![];
     for file in glob("config/*.yml").unwrap() {
         if let Ok(file) = file {
-            let mut f = try!(File::open(file));
+            let mut f = File::open(file).unwrap();
             let mut s = String::new();
-            try!(f.read_to_string(&mut s));
+            f.read_to_string(&mut s).unwrap();
             let yaml = YamlLoader::load_from_str(&s).unwrap();
             let action = parse_action(&yaml[0]);
             debug!("Action {:?} loaded", action);
@@ -77,35 +77,36 @@ fn load_config() -> Result<String> {
     }
 
     info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
-
-
-    debug!("Successfuly loaded config");
-    Ok(String::new())
+    let mut settings = settings.lock().unwrap();
+    *settings = new_config;
 }
 
-fn handle_sighup(settings: Arc<Mutex<String>>) {
-    let mut settings = settings.lock().unwrap();
-    *settings = load_config().unwrap_or(String::new());
+fn handle_sighup(settings: &Arc<Mutex<Vec<Action>>>) {
+    load_config(settings);
     debug!("Config reloaded");
 }
 
-fn handle_telegram(api: Api, settings: Arc<Mutex<String>>) {
+fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
     let mut listener = api.listener(ListeningMethod::LongPoll(None));
 
     listener.listen(|u| {
         if let Some(m) = u.message {
             debug!("Got {:?}", m);
-            if let MessageType::Text(_) = m.msg {
-                let greeting = settings.lock().unwrap();
-                try!(api.send_message(
-                        m.chat.id(),
-                        format!("{}, {}!", *greeting, m.from.first_name),
-                        None, None, None,
-                        Some(ReplyKeyboardMarkup {
-                            keyboard: vec![vec![greeting.clone()]],
-                            ..Default::default()
-                        }.into()))
-                    );
+            if let MessageType::Text(requested_action) = m.msg {
+                let actions = settings.lock().unwrap();
+                for action in actions.iter() {
+                    if action.action == requested_action {
+                        api.send_message(
+                            m.chat.id(),
+                            format!("{}, {}!", action.title, m.from.first_name),
+                            None, None, None,
+                            Some(ReplyKeyboardMarkup {
+                                keyboard: vec![actions.iter().map(|a| a.action.clone()).collect()],
+                                ..Default::default()
+                            }.into())).unwrap();
+
+                    }
+                }
             }
         }
 
@@ -122,14 +123,15 @@ fn main() {
     init_logging(cli_options.is_present("debug"));
 
 
-    let greeting = Arc::new(Mutex::new(load_config().unwrap_or("Hi".into())));
+    let greeting = Arc::new(Mutex::new(vec![]));
+    load_config(&greeting);
 
-    let trap_greeting = greeting.clone();
+    let handler_greeting = greeting.clone();
     Signals::set_handler(&[Signal::Hup], move |_signals| {
         info!("Got SIGHUP, reloading");
-        let trap_greeting = trap_greeting.clone();
+        let greeting = handler_greeting.clone();
         thread::spawn(move || {
-            handle_sighup(trap_greeting);
+            handle_sighup(&greeting);
         });
     });
 
@@ -139,7 +141,7 @@ fn main() {
     info!("Bot connected: {:?}", api.get_me().unwrap());
 
     let telegram_thread = thread::spawn(move || {
-      handle_telegram(api, greeting);
+      handle_telegram(&api, &greeting);
     });
 
     telegram_thread.join().unwrap();
