@@ -69,14 +69,17 @@ fn load_config(settings: &Arc<Mutex<Vec<Action>>>) {
     let mut new_config: Vec<Action> = vec![];
     if let Ok(paths) = glob("config/*.yml") {
       for file in paths {
-        if let Ok(file) = file {
-          let mut f = File::open(file).unwrap();
-          let mut s = String::new();
-          f.read_to_string(&mut s).unwrap();
-          let yaml = YamlLoader::load_from_str(&s).unwrap();
-          let action = parse_action(&yaml[0]);
-          debug!("Action {:?} loaded", action);
-          new_config.push(action);
+        if let Ok(ref file) = file {
+          if let Ok(mut f) = File::open(file) {
+            let mut s = String::new();
+            f.read_to_string(&mut s).unwrap();
+            let yaml = YamlLoader::load_from_str(&s).unwrap();
+            let action = parse_action(&yaml[0]);
+            debug!("Action {:?} loaded", action);
+            new_config.push(action);
+          } else {
+            error!("Failed to read a file {:?}", file);
+          }
         }
       }
       info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
