@@ -72,23 +72,35 @@ fn load_config(settings: &Arc<Mutex<Vec<Action>>>) {
         if let Ok(ref file) = file {
           if let Ok(mut f) = File::open(file) {
             let mut s = String::new();
-            f.read_to_string(&mut s).unwrap();
-            let yaml = YamlLoader::load_from_str(&s).unwrap();
-            let action = parse_action(&yaml[0]);
-            debug!("Action {:?} loaded", action);
-            new_config.push(action);
+            if f.read_to_string(&mut s).is_ok() {
+              if let Ok(yaml) = YamlLoader::load_from_str(&s) {
+                let action = parse_action(&yaml[0]);
+                debug!("Action {:?} loaded", action);
+                new_config.push(action);
+              } else {
+                error!("File {:?} is not a valid YAML", file);
+              }
+            } else {
+              error!("Failed to read file {:?} contents", file);
+            }
           } else {
             error!("Failed to read a file {:?}", file);
           }
         }
       }
       info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
-      let mut settings = settings.lock().unwrap();
-      *settings = new_config;
+      if let Ok(mut settings) = settings.lock() {
+        *settings = new_config;
+      } else {
+        warn!("Failed to lock mutex on settings!");
+      }
     } else {
       error!("No configs found!");
-      let mut settings = settings.lock().unwrap();
-      *settings = vec![];
+      if let Ok(mut settings) = settings.lock() {
+        *settings = vec![];
+      } else {
+        warn!("Failed to lock mutex on settings!");
+      }
     }
 }
 
