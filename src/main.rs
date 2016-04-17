@@ -67,21 +67,26 @@ fn load_config(settings: &Arc<Mutex<Vec<Action>>>) {
     debug!("Loading configs");
 
     let mut new_config: Vec<Action> = vec![];
-    for file in glob("config/*.yml").unwrap() {
+    if let Ok(paths) = glob("config/*.yml") {
+      for file in paths {
         if let Ok(file) = file {
-            let mut f = File::open(file).unwrap();
-            let mut s = String::new();
-            f.read_to_string(&mut s).unwrap();
-            let yaml = YamlLoader::load_from_str(&s).unwrap();
-            let action = parse_action(&yaml[0]);
-            debug!("Action {:?} loaded", action);
-            new_config.push(action);
+          let mut f = File::open(file).unwrap();
+          let mut s = String::new();
+          f.read_to_string(&mut s).unwrap();
+          let yaml = YamlLoader::load_from_str(&s).unwrap();
+          let action = parse_action(&yaml[0]);
+          debug!("Action {:?} loaded", action);
+          new_config.push(action);
         }
+      }
+      info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
+      let mut settings = settings.lock().unwrap();
+      *settings = new_config;
+    } else {
+      error!("No configs found!");
+      let mut settings = settings.lock().unwrap();
+      *settings = vec![];
     }
-
-    info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
-    let mut settings = settings.lock().unwrap();
-    *settings = new_config;
 }
 
 fn handle_sighup(settings: &Arc<Mutex<Vec<Action>>>) {
@@ -104,11 +109,11 @@ fn generate_actions_list(actions: &Vec<Action>) -> String {
     buff
 }
 
-fn call(commandline: &String) {
+fn call(commandline: &String) -> bool {
     let mut arguments: Vec<&str> = commandline.split_whitespace().collect();
     let command = arguments.remove(0);
     debug!("Calling {:?} with arguments {:?}", command, arguments);
-    Command::new(command).args(&arguments).spawn().unwrap();
+    Command::new(command).args(&arguments).spawn().is_ok()
 }
 
 fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
@@ -136,12 +141,12 @@ fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
                             debug!("Found matching action {:?}", action);
                             if action.users.iter().any(|allowed| *allowed == requested_username) {
                                 debug!("Action authorized");
-                                call(&action.command);
-                                api.send_message(
-                                    m.chat.id(),
-                                    format!("{}, {}!", action.title, m.from.first_name),
-                                    None, None, None, keyboard.clone()
-                                    ).unwrap();
+                                let message = if call(&action.command) {
+                                  format!("{}, {}!", action.title, m.from.first_name)
+                                } else {
+                                  format!("Не удалось {}, {}!", action.title, m.from.first_name)
+                                };
+                                api.send_message( m.chat.id(), message, None, None, None, keyboard.clone()).unwrap();
                             } else {
                                 debug!("Action denied; user is not in users list");
                                 api.send_message(
