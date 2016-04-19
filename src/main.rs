@@ -138,41 +138,53 @@ fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
         if let Some(m) = u.message {
             debug!("Got {:?}", m);
             if let MessageType::Text(requested_action) = m.msg {
-                let requested_username = m.from.username.unwrap();
 
-                let actions = settings.lock().unwrap();
-                let keyboard = generate_keyboard(&actions);
+              if let Some(requested_username) = m.from.username {
+                if let Ok(actions) = settings.lock() {
+                  let keyboard = generate_keyboard(&actions);
 
-                if requested_action == "/start" {
+                  if requested_action == "/start" {
                     debug!("Sending welcome message");
-                    api.send_message(
-                        m.chat.id(),
-                        format!("Привет, {}!\nЯ умею следующее: {}", m.from.first_name, generate_actions_list(&actions)),
-                        None, None, None, keyboard.clone()
-                        ).unwrap();
-                } else {
-                    for action in actions.iter() {
-                        if action.action == requested_action {
-                            debug!("Found matching action {:?}", action);
-                            if action.users.iter().any(|allowed| *allowed == requested_username) {
-                                debug!("Action authorized");
-                                let message = if call(&action.command) {
-                                  format!("{}, {}!", action.title, m.from.first_name)
-                                } else {
-                                  format!("Не удалось {}, {}!", action.title, m.from.first_name)
-                                };
-                                api.send_message( m.chat.id(), message, None, None, None, keyboard.clone()).unwrap();
-                            } else {
-                                debug!("Action denied; user is not in users list");
-                                api.send_message(
-                                    m.chat.id(),
-                                    format!("Пошёл нафиг, {}!", m.from.first_name),
-                                    None, None, None, keyboard.clone()
-                                    ).unwrap();
-                            }
-                        }
+                    if api.send_message(
+                      m.chat.id(),
+                      format!("Привет, {}!\nЯ умею следующее: {}", m.from.first_name, generate_actions_list(&actions)),
+                      None, None, None, keyboard.clone()
+                      ).is_err() {
+                      error!("Failed to send welcome message to {}", m.from.first_name)
                     }
+                  } else {
+                    for action in actions.iter() {
+                      if action.action == requested_action {
+                        debug!("Found matching action {:?}", action);
+                        if action.users.iter().any(|allowed| *allowed == requested_username) {
+                          debug!("Action authorized");
+                          let message = if call(&action.command) {
+                            format!("{}, {}!", action.title, m.from.first_name)
+                          } else {
+                            format!("Не удалось {}, {}!", action.title, m.from.first_name)
+                          };
+                          if api.send_message( m.chat.id(), message, None, None, None, keyboard.clone()).is_err() {
+                            error!("Failed to send message to {}", m.from.first_name)
+                          }
+                        } else {
+                          debug!("Action denied; user is not in users list");
+                          if api.send_message(
+                            m.chat.id(),
+                            format!("Пошёл нафиг, {}!", m.from.first_name),
+                            None, None, None, keyboard.clone()
+                            ).is_err() {
+                            error!("Failed to send access denied message to {}", m.from.first_name)
+                          }
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  error!("Failed to grab mutex on settings!");
                 }
+              } else {
+                error!("Failed to read username from {:?}", m.from);
+              }
             }
         }
 
