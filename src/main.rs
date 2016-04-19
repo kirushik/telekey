@@ -67,21 +67,41 @@ fn load_config(settings: &Arc<Mutex<Vec<Action>>>) {
     debug!("Loading configs");
 
     let mut new_config: Vec<Action> = vec![];
-    for file in glob("config/*.yml").unwrap() {
-        if let Ok(file) = file {
-            let mut f = File::open(file).unwrap();
+    if let Ok(paths) = glob("config/*.yml") {
+      for file in paths {
+        if let Ok(ref file) = file {
+          if let Ok(mut f) = File::open(file) {
             let mut s = String::new();
-            f.read_to_string(&mut s).unwrap();
-            let yaml = YamlLoader::load_from_str(&s).unwrap();
-            let action = parse_action(&yaml[0]);
-            debug!("Action {:?} loaded", action);
-            new_config.push(action);
+            if f.read_to_string(&mut s).is_ok() {
+              if let Ok(yaml) = YamlLoader::load_from_str(&s) {
+                let action = parse_action(&yaml[0]);
+                debug!("Action {:?} loaded", action);
+                new_config.push(action);
+              } else {
+                error!("File {:?} is not a valid YAML", file);
+              }
+            } else {
+              error!("Failed to read file {:?} contents", file);
+            }
+          } else {
+            error!("Failed to read a file {:?}", file);
+          }
         }
+      }
+      info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
+      if let Ok(mut settings) = settings.lock() {
+        *settings = new_config;
+      } else {
+        warn!("Failed to lock mutex on settings!");
+      }
+    } else {
+      error!("No configs found!");
+      if let Ok(mut settings) = settings.lock() {
+        *settings = vec![];
+      } else {
+        warn!("Failed to lock mutex on settings!");
+      }
     }
-
-    info!("Loaded actions: {:?}", new_config.iter().map(|action| &action.action).collect::<Vec<_>>());
-    let mut settings = settings.lock().unwrap();
-    *settings = new_config;
 }
 
 fn handle_sighup(settings: &Arc<Mutex<Vec<Action>>>) {
@@ -104,11 +124,11 @@ fn generate_actions_list(actions: &Vec<Action>) -> String {
     buff
 }
 
-fn call(commandline: &String) {
+fn call(commandline: &String) -> bool {
     let mut arguments: Vec<&str> = commandline.split_whitespace().collect();
     let command = arguments.remove(0);
     debug!("Calling {:?} with arguments {:?}", command, arguments);
-    Command::new(command).args(&arguments).spawn().unwrap();
+    Command::new(command).args(&arguments).spawn().is_ok()
 }
 
 fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
@@ -118,41 +138,53 @@ fn handle_telegram(api: &Api, settings: &Arc<Mutex<Vec<Action>>>) {
         if let Some(m) = u.message {
             debug!("Got {:?}", m);
             if let MessageType::Text(requested_action) = m.msg {
-                let requested_username = m.from.username.unwrap();
 
-                let actions = settings.lock().unwrap();
-                let keyboard = generate_keyboard(&actions);
+              if let Some(requested_username) = m.from.username {
+                if let Ok(actions) = settings.lock() {
+                  let keyboard = generate_keyboard(&actions);
 
-                if requested_action == "/start" {
+                  if requested_action == "/start" {
                     debug!("Sending welcome message");
-                    api.send_message(
-                        m.chat.id(),
-                        format!("Привет, {}!\nЯ умею следующее: {}", m.from.first_name, generate_actions_list(&actions)),
-                        None, None, None, keyboard.clone()
-                        ).unwrap();
-                } else {
-                    for action in actions.iter() {
-                        if action.action == requested_action {
-                            debug!("Found matching action {:?}", action);
-                            if action.users.iter().any(|allowed| *allowed == requested_username) {
-                                debug!("Action authorized");
-                                call(&action.command);
-                                api.send_message(
-                                    m.chat.id(),
-                                    format!("{}, {}!", action.title, m.from.first_name),
-                                    None, None, None, keyboard.clone()
-                                    ).unwrap();
-                            } else {
-                                debug!("Action denied; user is not in users list");
-                                api.send_message(
-                                    m.chat.id(),
-                                    format!("Пошёл нафиг, {}!", m.from.first_name),
-                                    None, None, None, keyboard.clone()
-                                    ).unwrap();
-                            }
-                        }
+                    if api.send_message(
+                      m.chat.id(),
+                      format!("Привет, {}!\nЯ умею следующее: {}", m.from.first_name, generate_actions_list(&actions)),
+                      None, None, None, keyboard.clone()
+                      ).is_err() {
+                      error!("Failed to send welcome message to {}", m.from.first_name)
                     }
+                  } else {
+                    for action in actions.iter() {
+                      if action.action == requested_action {
+                        debug!("Found matching action {:?}", action);
+                        if action.users.iter().any(|allowed| *allowed == requested_username) {
+                          debug!("Action authorized");
+                          let message = if call(&action.command) {
+                            format!("{}, {}!", action.title, m.from.first_name)
+                          } else {
+                            format!("Не удалось {}, {}!", action.title, m.from.first_name)
+                          };
+                          if api.send_message( m.chat.id(), message, None, None, None, keyboard.clone()).is_err() {
+                            error!("Failed to send message to {}", m.from.first_name)
+                          }
+                        } else {
+                          debug!("Action denied; user is not in users list");
+                          if api.send_message(
+                            m.chat.id(),
+                            format!("Пошёл нафиг, {}!", m.from.first_name),
+                            None, None, None, keyboard.clone()
+                            ).is_err() {
+                            error!("Failed to send access denied message to {}", m.from.first_name)
+                          }
+                        }
+                      }
+                    }
+                  }
+                } else {
+                  error!("Failed to grab mutex on settings!");
                 }
+              } else {
+                error!("Failed to read username from {:?}", m.from);
+              }
             }
         }
 
